@@ -1,0 +1,67 @@
+{
+  "name": "wacrm-desktop",
+  "version": "1.0.0",
+  "description": "WhatsApp CRM desktop app powered by OpenWA core",
+  "main": "electron/main.js",
+  "author": "wacrm",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build:frontend": "npm --prefix frontend run build",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^37.10.2",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "build": {
+    "appId": "com.wacrm.desktop",
+    "productName": "WaCRM",
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "node_modules/**/*",
+      "data/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "node/**/*"
+        ]
+      },
+      {
+        "from": "core",
+        "to": "core",
+        "filter": [
+          "dist/**/*",
+          "node_modules/**/*",
+          ".env",
+          "package.json"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "build"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
