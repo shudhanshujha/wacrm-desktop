@@ -6,34 +6,164 @@ const store = require('../store');
 
 const router = Router();
 
-function resolveApiKey() {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+function loadAiConfig() {
+  const configFile = path.join(store.DATA_DIR, 'ai-config.json');
+  let config = {
+    provider: process.env.AI_PROVIDER || 'groq',
+    groqApiKey: process.env.GROQ_API_KEY || '',
+    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
+  };
+
   try {
-    const f = path.join(store.DATA_DIR, 'ai-key');
-    if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim();
+    if (fs.existsSync(configFile)) {
+      const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+      config = { ...config, ...saved };
+    } else {
+      // Legacy fallback check for single ai-key file
+      const legacyKeyFile = path.join(store.DATA_DIR, 'ai-key');
+      if (fs.existsSync(legacyKeyFile)) {
+        const legacyKey = fs.readFileSync(legacyKeyFile, 'utf8').trim();
+        if (legacyKey.startsWith('gsk_')) {
+          config.provider = 'groq';
+          config.groqApiKey = legacyKey;
+        } else {
+          config.provider = 'anthropic';
+          config.anthropicApiKey = legacyKey;
+        }
+      }
+    }
   } catch {
     /* ignore */
   }
-  return null;
+
+  return config;
 }
 
-router.post('/key', (req, res) => {
-  const { key } = req.body || {};
-  if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key required' });
-  const file = path.join(store.DATA_DIR, 'ai-key');
+function saveAiConfig(newConfig) {
+  const configFile = path.join(store.DATA_DIR, 'ai-config.json');
   fs.mkdirSync(store.DATA_DIR, { recursive: true });
-  fs.writeFileSync(file, key.trim(), 'utf8');
+  const current = loadAiConfig();
+  const updated = { ...current, ...newConfig };
+  fs.writeFileSync(configFile, JSON.stringify(updated, null, 2), 'utf8');
+  return updated;
+}
+
+router.get('/config', (_req, res) => {
+  const config = loadAiConfig();
+  res.json({
+    provider: config.provider,
+    groqApiKey: config.groqApiKey ? '••••••••' + config.groqApiKey.slice(-4) : '',
+    hasGroqKey: Boolean(config.groqApiKey),
+    groqModel: config.groqModel,
+    anthropicApiKey: config.anthropicApiKey ? '••••••••' + config.anthropicApiKey.slice(-4) : '',
+    hasAnthropicKey: Boolean(config.anthropicApiKey),
+    anthropicModel: config.anthropicModel,
+  });
+});
+
+router.post('/config', (req, res) => {
+  const { provider, groqApiKey, groqModel, anthropicApiKey, anthropicModel } = req.body || {};
+  const current = loadAiConfig();
+
+  const toSave = {
+    provider: provider || current.provider,
+    groqModel: groqModel || current.groqModel,
+    anthropicModel: anthropicModel || current.anthropicModel,
+  };
+
+  if (groqApiKey !== undefined && !groqApiKey.includes('••••')) {
+    toSave.groqApiKey = groqApiKey.trim();
+  }
+  if (anthropicApiKey !== undefined && !anthropicApiKey.includes('••••')) {
+    toSave.anthropicApiKey = anthropicApiKey.trim();
+  }
+
+  const updated = saveAiConfig(toSave);
+  res.json({ ok: true, provider: updated.provider });
+});
+
+router.post('/key', (req, res) => {
+  const { key, provider } = req.body || {};
+  if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key required' });
+  const k = key.trim();
+  const prov = provider || (k.startsWith('gsk_') ? 'groq' : 'anthropic');
+  if (prov === 'groq') {
+    saveAiConfig({ provider: 'groq', groqApiKey: k });
+  } else {
+    saveAiConfig({ provider: 'anthropic', anthropicApiKey: k });
+  }
   res.json({ ok: true });
 });
 
-function callAnthropic(system, userPrompt) {
+function callGroq(system, userPrompt, apiKey, model) {
   return new Promise((resolve, reject) => {
-    const apiKey = resolveApiKey();
     if (!apiKey) {
-      return reject(Object.assign(new Error('Anthropic API key not set. Add it in Settings → AI assistant.'), { code: 502 }));
+      return reject(
+        Object.assign(new Error('Groq API key not set. Add it in Settings → AI assistant.'), { code: 502 }),
+      );
     }
     const payload = JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+      model: model || 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    const req = https.request(
+      {
+        host: 'api.groq.com',
+        path: '/openai/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${apiKey}`,
+          'content-length': Buffer.byteLength(payload),
+        },
+        timeout: 60000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          let json = null;
+          try {
+            json = JSON.parse(raw);
+          } catch {
+            json = { error: { message: raw } };
+          }
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            const text = (json.choices?.[0]?.message?.content || '').trim();
+            resolve(text);
+          } else {
+            const err = new Error(json.error?.message || `Groq error ${res.statusCode}`);
+            err.statusCode = res.statusCode;
+            reject(err);
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('Groq request timed out')));
+    req.write(payload);
+    req.end();
+  });
+}
+
+function callAnthropic(system, userPrompt, apiKey, model) {
+  return new Promise((resolve, reject) => {
+    if (!apiKey) {
+      return reject(
+        Object.assign(new Error('Anthropic API key not set. Add it in Settings → AI assistant.'), { code: 502 }),
+      );
+    }
+    const payload = JSON.stringify({
+      model: model || 'claude-3-5-sonnet-20241022',
       max_tokens: 1024,
       system,
       messages: [{ role: 'user', content: userPrompt }],
@@ -101,8 +231,15 @@ router.post('/suggest', async (req, res) => {
     ? `Customer: ${contactName}\n\nRecent conversation:\n${transcript || '(no history yet)'}\n\nWrite the next agent reply:`
     : `Recent conversation:\n${transcript || '(no history yet)'}\n\nWrite the next agent reply:`;
 
+  const config = loadAiConfig();
+
   try {
-    const text = await callAnthropic(system, user);
+    let text = '';
+    if (config.provider === 'groq') {
+      text = await callGroq(system, user, config.groqApiKey, config.groqModel);
+    } else {
+      text = await callAnthropic(system, user, config.anthropicApiKey, config.anthropicModel);
+    }
     res.json({ text });
   } catch (err) {
     res.status(err.statusCode || 502).json({ error: err.message });

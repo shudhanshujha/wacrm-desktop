@@ -485,7 +485,7 @@ export default function Inbox() {
                     <button className="btn sm" disabled={suggesting} onClick={suggestReply}>
                       {suggesting ? <span className="loader" style={{ width: 12, height: 12 }} /> : '✨ AI reply'}
                     </button>
-                    <span className="muted" style={{ fontSize: 12 }}>AI suggestions need an Anthropic API key in Settings.</span>
+                    <span className="muted" style={{ fontSize: 12 }}>AI suggestions need a Groq or Anthropic API key in Settings.</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

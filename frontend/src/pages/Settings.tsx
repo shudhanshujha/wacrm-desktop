@@ -8,7 +8,13 @@ export default function Settings() {
   const [tab, setTab] = useState<'canned' | 'templates' | 'ai'>('canned');
   const [canned, setCanned] = useState<CannedReply[]>([]);
   const [templates, setTemplates] = useState<{ id: string; name: string; body: string }[]>([]);
-  const [aiKey, setAiKey] = useState('');
+  // AI Config state
+  const [provider, setProvider] = useState<'groq' | 'anthropic'>('groq');
+  const [groqApiKey, setGroqApiKey] = useState('');
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile');
+  const [anthropicApiKey, setAnthropicApiKey] = useState('');
+  const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
+  const [savingAi, setSavingAi] = useState(false);
 
   const loadCanned = () =>
     api.get<CannedReply[]>('/api/canned-replies').then(setCanned).catch(() => setCanned([]));
@@ -18,10 +24,51 @@ export default function Settings() {
       .then(setTemplates)
       .catch(() => setTemplates([]));
 
+  const loadAiConfig = () => {
+    api
+      .get<{
+        provider: 'groq' | 'anthropic';
+        groqApiKey: string;
+        groqModel: string;
+        anthropicApiKey: string;
+        anthropicModel: string;
+      }>('/api/ai/config')
+      .then((cfg) => {
+        if (cfg) {
+          if (cfg.provider) setProvider(cfg.provider);
+          if (cfg.groqApiKey) setGroqApiKey(cfg.groqApiKey);
+          if (cfg.groqModel) setGroqModel(cfg.groqModel);
+          if (cfg.anthropicApiKey) setAnthropicApiKey(cfg.anthropicApiKey);
+          if (cfg.anthropicModel) setAnthropicModel(cfg.anthropicModel);
+        }
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     loadCanned();
     loadTemplates();
+    loadAiConfig();
   }, []);
+
+  async function saveAiSettings() {
+    setSavingAi(true);
+    try {
+      await api.post('/api/ai/config', {
+        provider,
+        groqApiKey,
+        groqModel,
+        anthropicApiKey,
+        anthropicModel,
+      });
+      toast(`AI settings saved (${provider === 'groq' ? 'Groq AI' : 'Anthropic Claude'})`);
+      loadAiConfig();
+    } catch (e) {
+      toast(`Failed to save AI config: ${(e as Error).message}`, true);
+    } finally {
+      setSavingAi(false);
+    }
+  }
 
   // canned reply editor
   const [cTitle, setCTitle] = useState('');
@@ -67,17 +114,6 @@ export default function Settings() {
   async function delTemplate(id: string) {
     await api.del(`/api/templates/${id}`);
     loadTemplates();
-  }
-
-  function saveAiKey() {
-    if (!aiKey.trim()) return toast('Enter an API key', true);
-    api
-      .post('/api/ai/key', { key: aiKey })
-      .then(() => {
-        toast('AI key saved');
-        setAiKey('');
-      })
-      .catch((e) => toast((e as Error).message, true));
   }
 
   return (
@@ -209,33 +245,101 @@ export default function Settings() {
         )}
 
         {tab === 'ai' && (
-          <div className="card" style={{ maxWidth: 520 }}>
-            <h3 style={{ marginTop: 0 }}>AI reply assistant</h3>
-            <p className="muted">
-              The AI suggestion button in the Inbox uses Anthropic Claude. Add your API key below
-              (get one at console.anthropic.com). Suggestions gracefully degrade with a clear error
-              when no key is configured.
+          <div className="card" style={{ maxWidth: 540 }}>
+            <h3 style={{ marginTop: 0 }}>AI Reply Assistant</h3>
+            <p className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
+              Configure AI suggestions for your chat inbox. Choose your preferred AI provider below.
             </p>
+
             <div className="form-row">
-              <label>Anthropic API key</label>
-              <input
-                type="password"
-                placeholder="sk-ant-…"
-                value={aiKey}
-                onChange={(e) => setAiKey(e.target.value)}
-              />
+              <label style={{ fontWeight: 600 }}>Active AI Provider</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className={`btn ${provider === 'groq' ? 'primary' : ''}`}
+                  onClick={() => setProvider('groq')}
+                  type="button"
+                >
+                  ⚡ Groq AI (Fast & Free)
+                </button>
+                <button
+                  className={`btn ${provider === 'anthropic' ? 'primary' : ''}`}
+                  onClick={() => setProvider('anthropic')}
+                  type="button"
+                >
+                  🧠 Anthropic Claude
+                </button>
+              </div>
             </div>
-            <div className="form-row">
-              <label>Model</label>
-              <input placeholder="claude-sonnet-4-20250514 (default)" disabled />
+
+            {provider === 'groq' && (
+              <>
+                <div className="form-row" style={{ marginTop: 16 }}>
+                  <label>
+                    Groq API Key{' '}
+                    <a
+                      href="https://console.groq.com/keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: 12, marginLeft: 6 }}
+                    >
+                      (Get free key at console.groq.com)
+                    </a>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="gsk_…"
+                    value={groqApiKey}
+                    onChange={(e) => setGroqApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Groq AI Model</label>
+                  <select value={groqModel} onChange={(e) => setGroqModel(e.target.value)}>
+                    <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Recommended)</option>
+                    <option value="llama3-70b-8192">llama3-70b-8192</option>
+                    <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+                    <option value="gemma2-9b-it">gemma2-9b-it</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            {provider === 'anthropic' && (
+              <>
+                <div className="form-row" style={{ marginTop: 16 }}>
+                  <label>
+                    Anthropic API Key{' '}
+                    <a
+                      href="https://console.anthropic.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: 12, marginLeft: 6 }}
+                    >
+                      (Get key at console.anthropic.com)
+                    </a>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="sk-ant-…"
+                    value={anthropicApiKey}
+                    onChange={(e) => setAnthropicApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Claude Model</label>
+                  <select value={anthropicModel} onChange={(e) => setAnthropicModel(e.target.value)}>
+                    <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022 (Recommended)</option>
+                    <option value="claude-3-haiku-20240307">claude-3-haiku-20240307</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            <div className="form-actions" style={{ marginTop: 20 }}>
+              <button className="btn primary" disabled={savingAi} onClick={saveAiSettings}>
+                {savingAi ? 'Saving…' : 'Save AI Settings'}
+              </button>
             </div>
-            <div className="form-actions">
-              <button className="btn primary" onClick={saveAiKey}>Save key</button>
-            </div>
-            <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-              Note: the desktop server reads the key from the <span className="mono">ANTHROPIC_API_KEY</span>{' '}
-              environment variable or the <span className="mono">data/ai-key</span> file next to the app.
-            </p>
           </div>
         )}
       </div>
