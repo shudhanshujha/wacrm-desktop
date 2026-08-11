@@ -1,12 +1,22 @@
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let detail = '';
+    let msg = `HTTP ${res.status}`;
     try {
-      detail = JSON.stringify(await res.json());
+      const data = await res.json();
+      if (typeof data === 'string') {
+        msg = data;
+      } else if (data && typeof data === 'object') {
+        msg = data.error?.message || data.error || data.message || JSON.stringify(data);
+      }
     } catch {
-      detail = await res.text();
+      try {
+        const text = await res.text();
+        if (text) msg = text;
+      } catch {
+        /* ignore */
+      }
     }
-    throw new Error(`${res.status}: ${detail}`);
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
   }
   return res.json() as Promise<T>;
 }

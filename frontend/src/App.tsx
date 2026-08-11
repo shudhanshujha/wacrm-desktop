@@ -1,4 +1,4 @@
-import { useEffect, useState, createContext, useContext, useCallback } from 'react';
+import { Component, ReactNode, useEffect, useState, createContext, useContext, useCallback } from 'react';
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { api } from './api';
 import type { StatusResponse } from './types';
@@ -9,6 +9,53 @@ import Broadcasts from './pages/Broadcasts';
 import Analytics from './pages/Analytics';
 import Automations from './pages/Automations';
 import Settings from './pages/Settings';
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[UI ErrorBoundary caught error]', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, color: '#fff', background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <h2>Something went wrong in the interface</h2>
+          <p style={{ opacity: 0.8, maxWidth: 500, textAlign: 'center', marginBottom: 20 }}>
+            {this.state.error?.message || 'An unexpected rendering error occurred.'}
+          </p>
+          <button
+            className="btn primary"
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              window.location.href = '/';
+            }}
+          >
+            Reload Interface
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface Toast {
   id: number;
@@ -100,16 +147,18 @@ export default function App() {
             </div>
           </aside>
           <div className="main">
-            <Routes>
-              <Route path="/" element={<Navigate to="/connect" replace />} />
-              <Route path="/connect" element={<Connect />} />
-              <Route path="/inbox" element={<Inbox />} />
-              <Route path="/contacts" element={<Contacts />} />
-              <Route path="/broadcasts" element={<Broadcasts />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/automations" element={<Automations />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Navigate to="/connect" replace />} />
+                <Route path="/connect" element={<Connect />} />
+                <Route path="/inbox" element={<Inbox />} />
+                <Route path="/contacts" element={<Contacts />} />
+                <Route path="/broadcasts" element={<Broadcasts />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/automations" element={<Automations />} />
+                <Route path="/settings" element={<Settings />} />
+              </Routes>
+            </ErrorBoundary>
           </div>
         </div>
         {toasts.map((t) => (

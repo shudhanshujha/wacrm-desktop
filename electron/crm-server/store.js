@@ -17,7 +17,9 @@ function read(name, fallback) {
   const file = fileFor(name);
   if (!fs.existsSync(file)) return fallback;
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const content = fs.readFileSync(file, 'utf8');
+    if (!content.trim()) return fallback;
+    return JSON.parse(content);
   } catch {
     return fallback;
   }
@@ -25,7 +27,20 @@ function read(name, fallback) {
 
 function write(name, data) {
   ensureDir();
-  fs.writeFileSync(fileFor(name), JSON.stringify(data, null, 2), 'utf8');
+  const targetFile = fileFor(name);
+  const tmpFile = `${targetFile}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpFile, targetFile);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+    } catch {
+      /* ignore unlink errors */
+    }
+    // Fallback direct write if rename fails across partitions
+    fs.writeFileSync(targetFile, JSON.stringify(data, null, 2), 'utf8');
+  }
 }
 
 function id(prefix) {

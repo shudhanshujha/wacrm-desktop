@@ -5,7 +5,8 @@ const openwa = require('./openwa');
 const PORT = parseInt(process.env.CRM_PORT || '3100', 10);
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 app.use('/api/core', require('./routes/proxy'));
 app.use('/api/canned-replies', require('./routes/canned-replies'));
