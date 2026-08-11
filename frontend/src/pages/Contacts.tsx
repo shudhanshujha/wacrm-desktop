@@ -3,6 +3,21 @@ import { api } from '../api';
 import { useSession, useToast } from '../App';
 import type { Chat, TimelineItem, TimelineResponse } from '../types';
 
+function extractId(c: any): string {
+  if (!c) return '';
+  if (typeof c === 'string') return c;
+  if (typeof c.id === 'string' && c.id) return c.id;
+  if (typeof c.id === 'object' && c.id) {
+    if (c.id._serialized) return c.id._serialized;
+    if (c.id.user) return `${c.id.user}@${c.id.server || 'c.us'}`;
+  }
+  if (typeof c.chatId === 'string' && c.chatId) return c.chatId;
+  if (typeof c.jid === 'string' && c.jid) return c.jid;
+  if (typeof c.number === 'string' && c.number) return `${c.number.replace(/\D/g, '')}@c.us`;
+  if (typeof c.phone === 'string' && c.phone) return `${c.phone.replace(/\D/g, '')}@c.us`;
+  return '';
+}
+
 export default function Contacts() {
   const { status } = useSession();
   const toast = useToast();
@@ -22,34 +37,52 @@ export default function Contacts() {
         api.get<Chat[]>(`/api/core/sessions/${sessionId}/chats?limit=500`),
       ]);
 
-      const rawContacts = contactsData.status === 'fulfilled' && Array.isArray(contactsData.value) ? contactsData.value : [];
-      const rawChats = chatsData.status === 'fulfilled' && Array.isArray(chatsData.value) ? chatsData.value : [];
+      const rawContacts =
+        contactsData.status === 'fulfilled'
+          ? Array.isArray(contactsData.value)
+            ? contactsData.value
+            : Array.isArray((contactsData.value as any)?.contacts)
+            ? (contactsData.value as any).contacts
+            : []
+          : [];
+      const rawChats =
+        chatsData.status === 'fulfilled'
+          ? Array.isArray(chatsData.value)
+            ? chatsData.value
+            : Array.isArray((chatsData.value as any)?.chats)
+            ? (chatsData.value as any).chats
+            : []
+          : [];
 
       const map = new Map<string, Chat>();
 
-      // Populate from synced contacts first
+      // Populate from synced phonebook contacts first
       for (const c of rawContacts) {
-        const id = String(c.id || c.chatId || c.jid || '');
+        const id = extractId(c);
         if (!id || id.endsWith('@g.us')) continue;
+        const phone = c.number || c.phone || id.split('@')[0];
+        const name = c.name || c.formattedName || c.pushName || c.shortName || phone;
         map.set(id, {
           id,
-          name: c.name || c.formattedName || c.pushName || id,
-          pushName: c.pushName || c.name,
-          phone: c.phone || id.split('@')[0],
-          lastMessage: c.lastMessage || 'Contact in phonebook',
+          name,
+          pushName: c.pushName || c.name || name,
+          phone,
+          lastMessage: c.lastMessage || 'Saved Contact',
         });
       }
 
       // Merge active chats
       for (const c of rawChats) {
-        const id = String(c.id || c.chatId || '');
+        const id = extractId(c);
         if (!id || id.endsWith('@g.us')) continue;
         const existing = map.get(id);
+        const phone = c.phone || c.number || existing?.phone || id.split('@')[0];
+        const name = c.name || c.pushName || existing?.name || phone;
         map.set(id, {
           id,
-          name: c.name || c.pushName || existing?.name || id,
-          pushName: c.pushName || existing?.pushName,
-          phone: c.phone || existing?.phone || id.split('@')[0],
+          name,
+          pushName: c.pushName || existing?.pushName || name,
+          phone,
           lastMessage: c.lastMessage || existing?.lastMessage || '',
         });
       }

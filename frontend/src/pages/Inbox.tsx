@@ -70,7 +70,27 @@ export default function Inbox() {
           const data = await api.get<any>(
             `/api/core/sessions/${sessionId}/messages?chatId=${encodeURIComponent(id)}&limit=50`,
           );
-          const list = Array.isArray(data) ? data : Array.isArray(data?.messages) ? data.messages : [];
+          let list = Array.isArray(data) ? data : Array.isArray(data?.messages) ? data.messages : [];
+          
+          if (list.length === 0) {
+            // Fallback to timeline endpoint if DB has no stored rows yet
+            try {
+              const tm = await api.get<any>(
+                `/api/timeline/contacts/${encodeURIComponent(id)}?sessionId=${sessionId}`,
+              );
+              if (Array.isArray(tm?.items) && tm.items.length > 0) {
+                list = tm.items.map((item: any) => ({
+                  id: item.id || String(Math.random()),
+                  fromMe: item.direction === 'out',
+                  body: item.body || '',
+                  timestamp: item.timestamp,
+                }));
+              }
+            } catch {
+              /* ignore timeline fallback errors */
+            }
+          }
+          
           setMessages(list);
         } catch {
           setMessages([]);
