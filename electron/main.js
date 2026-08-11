@@ -24,8 +24,17 @@ function log(tag, data) {
 }
 
 function getNodeBinary() {
-  if (fs.existsSync(NODE_BIN)) return NODE_BIN;
-  return 'node';
+  const candidates = [
+    path.join(process.resourcesPath, 'node', 'node.exe'),
+    path.join(process.resourcesPath, 'resources', 'node', 'node.exe'),
+    path.join(APP_DIR, 'resources', 'node', 'node.exe'),
+    path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'node', 'node.exe'),
+  ];
+  for (const bin of candidates) {
+    if (fs.existsSync(bin)) return { bin, isElectron: false };
+  }
+  // Fall back to Electron binary as Node.js runtime via ELECTRON_RUN_AS_NODE
+  return { bin: process.execPath, isElectron: true };
 }
 
 function startCore() {
@@ -34,55 +43,79 @@ function startCore() {
     console.error('[wacrm] core dist/main.js not found. Run `npm run build` inside core/ first.');
     return;
   }
-  const bin = getNodeBinary();
-  coreProc = spawn(bin, [distMain], {
-    cwd: CORE_DIR,
-    env: { ...process.env, PORT: String(CORE_PORT) },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  coreProc.stdout.on('data', (d) => {
-    const line = d.toString();
-    log('core', line);
-    if (!coreReady && /listen|started|Nest application|OpenAPI|ready/i.test(line)) {
-      coreReady = true;
-    }
-  });
-  coreProc.stderr.on('data', (d) => log('core:err', d.toString()));
-  coreProc.on('exit', (code) => {
-    console.log(`[wacrm] core exited with code ${code}`);
-    coreProc = null;
-    if (!shuttingDown) {
-      coreReady = false;
-      setTimeout(() => {
-        if (!shuttingDown && !coreProc) startCore();
-      }, 2000);
-    }
-  });
+  const { bin, isElectron } = getNodeBinary();
+  const env = { ...process.env, PORT: String(CORE_PORT) };
+  if (isElectron) {
+    env.ELECTRON_RUN_AS_NODE = '1';
+  }
+  try {
+    coreProc = spawn(bin, [distMain], {
+      cwd: CORE_DIR,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    coreProc.on('error', (err) => {
+      console.error('[wacrm] coreProc spawn error:', err);
+      coreProc = null;
+    });
+    coreProc.stdout.on('data', (d) => {
+      const line = d.toString();
+      log('core', line);
+      if (!coreReady && /listen|started|Nest application|OpenAPI|ready/i.test(line)) {
+        coreReady = true;
+      }
+    });
+    coreProc.stderr.on('data', (d) => log('core:err', d.toString()));
+    coreProc.on('exit', (code) => {
+      console.log(`[wacrm] core exited with code ${code}`);
+      coreProc = null;
+      if (!shuttingDown) {
+        coreReady = false;
+        setTimeout(() => {
+          if (!shuttingDown && !coreProc) startCore();
+        }, 2000);
+      }
+    });
+  } catch (e) {
+    console.error('[wacrm] core spawn exception:', e);
+  }
 }
 
 function startCrm() {
-  const bin = getNodeBinary();
-  crmProc = spawn(bin, [path.join(CRM_DIR, 'index.js')], {
-    cwd: CRM_DIR,
-    env: {
-      ...process.env,
-      CRM_PORT: String(CRM_PORT),
-      OPENWA_PORT: String(CORE_PORT),
-      WACRM_DATA_DIR: path.join(app.getPath('userData'), 'data'),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  crmProc.stdout.on('data', (d) => log('crm', d.toString()));
-  crmProc.stderr.on('data', (d) => log('crm:err', d.toString()));
-  crmProc.on('exit', (code) => {
-    console.log(`[wacrm] crm-server exited with code ${code}`);
-    crmProc = null;
-    if (!shuttingDown) {
-      setTimeout(() => {
-        if (!shuttingDown && !crmProc) startCrm();
-      }, 2000);
-    }
-  });
+  const { bin, isElectron } = getNodeBinary();
+  const env = {
+    ...process.env,
+    CRM_PORT: String(CRM_PORT),
+    OPENWA_PORT: String(CORE_PORT),
+    WACRM_DATA_DIR: path.join(app.getPath('userData'), 'data'),
+  };
+  if (isElectron) {
+    env.ELECTRON_RUN_AS_NODE = '1';
+  }
+  try {
+    crmProc = spawn(bin, [path.join(CRM_DIR, 'index.js')], {
+      cwd: CRM_DIR,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    crmProc.on('error', (err) => {
+      console.error('[wacrm] crmProc spawn error:', err);
+      crmProc = null;
+    });
+    crmProc.stdout.on('data', (d) => log('crm', d.toString()));
+    crmProc.stderr.on('data', (d) => log('crm:err', d.toString()));
+    crmProc.on('exit', (code) => {
+      console.log(`[wacrm] crm-server exited with code ${code}`);
+      crmProc = null;
+      if (!shuttingDown) {
+        setTimeout(() => {
+          if (!shuttingDown && !crmProc) startCrm();
+        }, 2000);
+      }
+    });
+  } catch (e) {
+    console.error('[wacrm] crm spawn exception:', e);
+  }
 }
 
 function createWindow() {
