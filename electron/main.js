@@ -23,17 +23,19 @@ function log(tag, data) {
   console.log(`[${tag}]`, String(data).trim().slice(0, 500));
 }
 
+function getNodeBinary() {
+  if (fs.existsSync(NODE_BIN)) return NODE_BIN;
+  return 'node';
+}
+
 function startCore() {
   const distMain = path.join(CORE_DIR, 'dist', 'main.js');
   if (!fs.existsSync(distMain)) {
     console.error('[wacrm] core dist/main.js not found. Run `npm run build` inside core/ first.');
     return;
   }
-  if (!fs.existsSync(NODE_BIN)) {
-    console.error('[wacrm] bundled node not found:', NODE_BIN);
-    return;
-  }
-  coreProc = spawn(NODE_BIN, [distMain], {
+  const bin = getNodeBinary();
+  coreProc = spawn(bin, [distMain], {
     cwd: CORE_DIR,
     env: { ...process.env, PORT: String(CORE_PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -48,17 +50,19 @@ function startCore() {
   coreProc.stderr.on('data', (d) => log('core:err', d.toString()));
   coreProc.on('exit', (code) => {
     console.log(`[wacrm] core exited with code ${code}`);
+    coreProc = null;
     if (!shuttingDown) {
       coreReady = false;
       setTimeout(() => {
         if (!shuttingDown && !coreProc) startCore();
-      }, 3000);
+      }, 2000);
     }
   });
 }
 
 function startCrm() {
-  crmProc = spawn(NODE_BIN, [path.join(CRM_DIR, 'index.js')], {
+  const bin = getNodeBinary();
+  crmProc = spawn(bin, [path.join(CRM_DIR, 'index.js')], {
     cwd: CRM_DIR,
     env: {
       ...process.env,
@@ -72,6 +76,12 @@ function startCrm() {
   crmProc.stderr.on('data', (d) => log('crm:err', d.toString()));
   crmProc.on('exit', (code) => {
     console.log(`[wacrm] crm-server exited with code ${code}`);
+    crmProc = null;
+    if (!shuttingDown) {
+      setTimeout(() => {
+        if (!shuttingDown && !crmProc) startCrm();
+      }, 2000);
+    }
   });
 }
 

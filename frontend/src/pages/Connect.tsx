@@ -42,28 +42,42 @@ export default function Connect() {
 
   async function ensureSession() {
     setBusy(true);
-    try {
-      let current = session;
-      if (!current) {
-        // Try getting existing sessions first or creating a new one
-        const st = await api.get<Session[]>('/api/core/sessions');
-        if (st && st.length > 0) {
-          current = st[0];
-        } else {
-          current = await api.post<Session>('/api/core/sessions', { name: 'wacrm' });
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        let current = session;
+        if (!current) {
+          // Try getting existing sessions first or creating a new one
+          const st = await api.get<Session[]>('/api/core/sessions');
+          if (Array.isArray(st) && st.length > 0) {
+            current = st[0];
+          } else {
+            current = await api.post<Session>('/api/core/sessions', { name: 'wacrm' });
+          }
+          setSession(current);
         }
-        setSession(current);
+        if (!current || !current.id) {
+          throw new Error('Engine returning invalid session object');
+        }
+        await api.post(`/api/core/sessions/${current.id}/start`).catch(() => {
+          // May already be starting
+        });
+        await refresh();
+        startQrPoll(current.id);
+        setBusy(false);
+        return;
+      } catch (e) {
+        lastError = e as Error;
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1200));
+        }
       }
-      if (!current) return;
-      await api.post(`/api/core/sessions/${current.id}/start`).catch(() => {
-        // May already be starting
-      });
-      await refresh();
-      startQrPoll(current.id);
-    } catch (e) {
-      toast(`Could not start session: ${(e as Error).message}`, true);
-    } finally {
-      setBusy(false);
+    }
+
+    setBusy(false);
+    if (lastError) {
+      toast(`Could not start session: ${lastError.message}`, true);
     }
   }
 
