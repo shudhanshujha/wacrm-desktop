@@ -6,7 +6,9 @@ const fs = require('fs');
 const IS_PACKAGED = app.isPackaged;
 const APP_DIR = IS_PACKAGED ? app.getAppPath() : path.join(__dirname, '..');
 const CORE_DIR = IS_PACKAGED ? path.join(process.resourcesPath, 'core') : path.join(APP_DIR, 'core');
-const CRM_DIR = path.join(APP_DIR, 'electron', 'crm-server');
+const CRM_DIR = IS_PACKAGED
+  ? path.join(APP_DIR + '.unpacked', 'electron', 'crm-server')
+  : path.join(APP_DIR, 'electron', 'crm-server');
 const NODE_BIN = IS_PACKAGED
   ? path.join(process.resourcesPath, 'node', 'node.exe')
   : path.join(APP_DIR, 'resources', 'node', 'node.exe');
@@ -88,6 +90,7 @@ function startCrm() {
     CRM_PORT: String(CRM_PORT),
     OPENWA_PORT: String(CORE_PORT),
     WACRM_DATA_DIR: path.join(app.getPath('userData'), 'data'),
+    WACRM_RESOURCES_PATH: IS_PACKAGED ? process.resourcesPath : '',
   };
   if (isElectron) {
     env.ELECTRON_RUN_AS_NODE = '1';

@@ -35,7 +35,9 @@ app.get('/api/status', async (_req, res) => {
 const fs = require('fs');
 
 function getFrontendDist() {
+  const resPath = process.env.WACRM_RESOURCES_PATH;
   const candidates = [
+    resPath ? path.join(resPath, 'frontend', 'dist') : null,
     process.resourcesPath ? path.join(process.resourcesPath, 'frontend', 'dist') : null,
     path.join(__dirname, '..', '..', 'frontend', 'dist'),
     path.join(__dirname, '..', 'frontend', 'dist'),
