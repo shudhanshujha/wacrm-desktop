@@ -130,7 +130,16 @@ function createWindow() {
       contextIsolation: true,
     },
   });
+
   win.loadURL(`http://127.0.0.1:${CRM_PORT}`);
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.warn(`[wacrm] window load failed (${errorCode}: ${errorDescription}), retrying in 1.5s...`);
+    setTimeout(() => {
+      if (win) win.loadURL(`http://127.0.0.1:${CRM_PORT}`);
+    }, 1500);
+  });
+
   win.on('closed', () => {
     win = null;
   });
@@ -145,18 +154,7 @@ function waitForCrm(timeoutMs = 30000) {
         { host: '127.0.0.1', port: CRM_PORT, path: '/api/status', timeout: 2000 },
         (resCrm) => {
           resCrm.resume();
-          const reqCore = http.get(
-            { host: '127.0.0.1', port: CORE_PORT, path: '/api/health/ready', timeout: 2000 },
-            (resCore) => {
-              resCore.resume();
-              resolve(true);
-            },
-          );
-          reqCore.on('error', retry);
-          reqCore.on('timeout', () => {
-            reqCore.destroy();
-            retry();
-          });
+          resolve(true);
         },
       );
       reqCrm.on('error', retry);

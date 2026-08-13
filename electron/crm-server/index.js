@@ -32,12 +32,36 @@ app.get('/api/status', async (_req, res) => {
   res.json({ coreAlive, sessions });
 });
 
-const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
+const fs = require('fs');
+
+function getFrontendDist() {
+  const candidates = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'frontend', 'dist') : null,
+    path.join(__dirname, '..', '..', 'frontend', 'dist'),
+    path.join(__dirname, '..', 'frontend', 'dist'),
+    path.join(process.cwd(), 'frontend', 'dist'),
+  ].filter(Boolean);
+
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'index.html'))) {
+      console.log('[crm-server] Serving frontend from:', dir);
+      return dir;
+    }
+  }
+  console.warn('[crm-server] frontend index.html not found in candidate paths:', candidates);
+  return path.join(__dirname, '..', '..', 'frontend', 'dist');
+}
+
+const frontendDist = getFrontendDist();
 app.use(express.static(frontendDist));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
-    if (err) res.status(404).json({ error: 'frontend not built yet' });
+  const indexPath = path.join(frontendDist, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('[crm-server] Failed to send index.html from:', indexPath, err);
+      res.status(404).send('WaCRM Frontend build assets not found.');
+    }
   });
 });
 

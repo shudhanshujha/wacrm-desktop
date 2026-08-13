@@ -1,6 +1,6 @@
 {
   "name": "wacrm-desktop",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "WhatsApp CRM desktop app powered by OpenWA core",
   "main": "electron/main.js",
   "author": "wacrm",
@@ -33,6 +33,10 @@
       {
         "from": "resources/node",
         "to": "node"
+      },
+      {
+        "from": "frontend/dist",
+        "to": "frontend/dist"
       },
       {
         "from": "core",
